@@ -39,20 +39,21 @@ type (
 		instance     string
 		logger       *lumberjack.Logger
 	}
-)
 
-func NewLoggerTracer(ctx context.Context, cfg *Config) (*LoggerTracer, error) {
-	lt := &LoggerTracer{Config: cfg}
-
-	if cfg.tracing {
-		tp, err := NewTraceProvider()
-		if err != nil {
-			return nil, err
-		}
-
-		lt.Tracer = tp.Tracer(cfg.serviceName)
+	Tracing struct {
+		Span
+		trace.Tracer
+		context.Context
 	}
 
+	Span struct {
+		trace.Span
+		context.Context
+	}
+)
+
+// NewLoggerTracer returns a new default config.
+func NewLoggerTracer(cfg *Config) (*LoggerTracer, error) {
 	writeSyncer := zapcore.AddSync(os.Stdout)
 
 	if cfg.logger != nil {
@@ -72,31 +73,66 @@ func NewLoggerTracer(ctx context.Context, cfg *Config) (*LoggerTracer, error) {
 	}
 
 	encoder := zapcore.NewJSONEncoder(encoderCfg)
+
 	if !cfg.structured {
 		encoder = zapcore.NewConsoleEncoder(encoderCfg)
 	}
 
-	lt.Logger = zap.New(zapcore.NewCore(encoder, writeSyncer, zapcore.InfoLevel))
+	logger := zap.New(zapcore.NewCore(encoder, writeSyncer, zapcore.InfoLevel))
 
-	context.WithValue(ctx, ctxKey{}, lt.Tracer)
-
-	return lt, nil
+	return &LoggerTracer{Config: cfg, Logger: logger}, nil
 }
 
-func NewTraceProvider() (*sdktrace.TracerProvider, error) {
-	var err error
+// NewTracing creates a new tracing instance.
+func (lt *LoggerTracer) NewTracing(serviceName string) (*Tracing, error) {
 	exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize stdouttrace exporter %v\n", err)
 	}
+
 	bsp := sdktrace.NewBatchSpanProcessor(exp)
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 		sdktrace.WithSpanProcessor(bsp),
 	)
+
 	otel.SetTracerProvider(tp)
 
-	return tp, nil
+	if err != nil {
+		return nil, err
+	}
+
+	tc := tp.Tracer(serviceName)
+	ctx := context.WithValue(context.Background(), ctxKey{}, tc)
+
+	return &Tracing{Tracer: tc, Context: ctx}, nil
+}
+
+// Start a new span with the given name and return a new context with the span in it.
+func (t *Tracing) Start(name string) {
+	ss, _ := t.Context.Value(ctxKey{}).(trace.Tracer)
+	ctx, span := ss.Start(t.Context, name)
+
+	t.Span = Span{Span: span, Context: ctx}
+}
+
+// End the span.
+func (t *Tracing) End() {
+	t.Span.End()
+}
+
+func (t *Tracing) FromContext(ctx context.Context) *zap.Logger {
+	childLogger, _ := ctx.Value(ctxKey{}).(*zap.Logger)
+
+	if traceID := trace.SpanFromContext(ctx).SpanContext().TraceID(); traceID.IsValid() {
+		childLogger = childLogger.With(zap.String("trace-id", traceID.String()))
+	}
+
+	if spanID := trace.SpanFromContext(ctx).SpanContext().SpanID(); spanID.IsValid() {
+		childLogger = childLogger.With(zap.String("span-id", spanID.String()))
+	}
+
+	return childLogger
 }
 
 func (lt *LoggerTracer) FromContext(ctx context.Context) *zap.Logger {
@@ -115,4 +151,8 @@ func (lt *LoggerTracer) FromContext(ctx context.Context) *zap.Logger {
 
 func (lt *LoggerTracer) NewContext(parent context.Context, z *zap.Logger) context.Context {
 	return context.WithValue(parent, ctxKey{}, z)
+}
+
+func (lt *LoggerTracer) WithTraceID(traceID string) *zap.Logger {
+	return lt.Logger.With(zap.String("trace-id", traceID))
 }
