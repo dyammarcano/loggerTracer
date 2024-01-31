@@ -1,32 +1,44 @@
 package tracer2logger
 
 import (
-	"context"
-	"testing"
-
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+	"testing"
 )
 
-func TestNewLoggerTracer(t *testing.T) {
+func TestNewMyLogger(t *testing.T) {
 	cfg := &Config{
-		logDir:       "/tmp",
-		serviceName:  "testService",
-		maxFileSize:  100,
-		maxAge:       1,
-		maxBackups:   1,
-		localTime:    true,
-		compress:     true,
-		stdout:       true,
-		rotateByDate: true,
-		tracing:      true,
-		structured:   true,
-		filename:     "test.log",
-		instance:     "testInstance",
+		logDir:      "C:/arqprod_local/testing",
+		serviceName: "testService",
+		tracing:     true,
+		//structured:  true,
 	}
 
-	ctx := context.Background()
-	loggerTracer, err := NewLoggerTracer(ctx, cfg)
-
+	err := NewMyLogger(cfg)
 	assert.NoError(t, err)
-	assert.NotNil(t, loggerTracer)
+
+	tp, err := SetTracer("teste")
+	assert.NoError(t, err)
+
+	tp.Info("Teste de log", zap.String("testeA", "testeB"))
+	tp.Warn("Teste de log")
+	tp.Error("Teste de log")
+
+	tp, err = SetTracer("teste")
+	assert.NoError(t, err)
+
+	tp.Info("Teste de log")
+	tp.Warn("Teste de log")
+	tp.Error("Teste de log")
+	//
+	//newTracer, err := myLogger.NewTracer("teste de span log")
+	//assert.NoError(t, err)
+	//
+	//newTracer.Start("span test 1 with trace")
+	//
+	//Info("Teste de log")
+	//Warn("Teste de log")
+	//Error("Teste de log")
+	//
+	//newTracer.End()
 }
