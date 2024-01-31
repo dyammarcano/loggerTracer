@@ -1,4 +1,4 @@
-[![CI Build + Unit Test](https://github.com/dyammarcano/loggerTracing/actions/workflows/ci.yml/badge.svg)](https://github.com/dyammarcano/loggerTracing/actions/workflows/ci.yml)
+[![Unit Test + Lint + Security](https://github.com/dyammarcano/loggerTracing/actions/workflows/ci.yml/badge.svg)](https://github.com/dyammarcano/loggerTracing/actions/workflows/ci.yml)
 
 # tracer2logger is a logger tracing
 
