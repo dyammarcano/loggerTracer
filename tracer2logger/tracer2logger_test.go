@@ -8,9 +8,9 @@ import (
 
 func TestNewMyLogger(t *testing.T) {
 	cfg := &Config{
-		logDir:      "C:/arqprod_local/testing",
-		serviceName: "testService",
-		tracing:     true,
+		LogDir:      "C:/arqprod_local/testing",
+		ServiceName: "testService",
+		Tracing:     true,
 		//structured:  true,
 	}
 

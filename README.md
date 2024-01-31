@@ -17,19 +17,33 @@ In contexts where performance is nice, but not critical, use the
 packages and includes both structured and `printf`-style APIs.
 
 ```go
-cfg := &Config{
-		logDir:      "/var/log/app",
-		serviceName: "testService",
-		tracing:     true,
-		structured:  true,
+package main
+
+import "github.com/dyammarcano/loggerTracing/tracer2logger"
+
+func main() {
+	cfg := &tracer2logger.Config{
+		LogDir:      "/var/log/app",
+		ServiceName: "testService",
+		Tracing:     true,
+		Structured:  true,
 	}
 
-if err := NewMyLogger(cfg); err != nil {
-  panic(err)
+	if err := tracer2logger.NewMyLogger(cfg); err != nil {
+		panic(err)
+	}
+
+	tp, err := tracer2logger.SetTracer("teste")
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		if err := tp.Shutdown(); err != nil {
+			panic(err)
+		}
+	}()
+
+	tp.Info("test info log")
 }
-
-tp, _ := tracer2logger.SetTracer("teste")
-defer func() { tracer2logger.Shutdown() }()
-
-tp.Info("test info log")
 ```

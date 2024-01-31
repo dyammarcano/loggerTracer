@@ -27,8 +27,8 @@ type (
 	}
 
 	Config struct {
-		logDir       string
-		serviceName  string
+		LogDir       string
+		ServiceName  string
 		maxFileSize  int
 		maxAge       int
 		maxBackups   int
@@ -36,8 +36,8 @@ type (
 		compress     bool
 		stdout       bool
 		rotateByDate bool
-		tracing      bool
-		structured   bool
+		Tracing      bool
+		Structured   bool
 	}
 
 	MTracer struct {
@@ -83,16 +83,16 @@ func checkDefaults(cfg *Config) {
 		cfg.rotateByDate = true
 	}
 
-	if cfg.logDir == "" {
+	if cfg.LogDir == "" {
 		wd, _ := os.Getwd()
-		cfg.logDir = filepath.Join(wd, "logs")
+		cfg.LogDir = filepath.Join(wd, "logs")
 	}
 }
 
 // lumberjackSetup returns a new lumberjack logger.
 func lumberjackSetup(cfg *Config) *lumberjack.Logger {
 	// create the file path with the service name
-	filePath := filepath.Join(cfg.logDir, fmt.Sprintf("%s.log", cfg.serviceName))
+	filePath := filepath.Join(cfg.LogDir, fmt.Sprintf("%s.log", cfg.ServiceName))
 
 	return &lumberjack.Logger{
 		Filename:   filePath,
@@ -109,16 +109,16 @@ func NewMyLogger(cfg *Config) error {
 	checkDefaults(cfg) // check if any default value is missing
 
 	if !cfg.stdout {
-		if _, err := os.Stat(cfg.logDir); os.IsNotExist(err) {
-			if err = os.MkdirAll(cfg.logDir, 0755); err != nil {
-				return fmt.Errorf("failed to create log directory: %s", cfg.logDir)
+		if _, err := os.Stat(cfg.LogDir); os.IsNotExist(err) {
+			if err = os.MkdirAll(cfg.LogDir, 0755); err != nil {
+				return fmt.Errorf("failed to create log directory: %s", cfg.LogDir)
 			}
 		}
 
 		global.writeSyncer = zapcore.AddSync(lumberjackSetup(cfg)) // change to write syncer
 	}
 
-	if cfg.tracing {
+	if cfg.Tracing {
 		if err := initTracer(); err != nil {
 			return err
 		}
@@ -128,8 +128,8 @@ func NewMyLogger(cfg *Config) error {
 	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder // change the time format
 	encoder := zapcore.NewJSONEncoder(encoderCfg)      // default encoder is JSON
 
-	if !cfg.structured {
-		global.structured = !cfg.structured
+	if !cfg.Structured {
+		global.structured = !cfg.Structured
 		encoder = zapcore.NewConsoleEncoder(encoderCfg) // change the encoder to console
 	}
 
