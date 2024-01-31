@@ -1,4 +1,4 @@
-name: CI Build + Unit Test
+name: Unit Test + Lint + Security
 
 on:
   push:
