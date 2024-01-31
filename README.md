@@ -2,7 +2,9 @@
 
 # tracer2logger is a logger tracing
 
-## tracer2logger wrap arround [zap](https://github.com/uber-go/zap)
+### `For Internal use in PoC`
+
+### tracer2logger wrap arround [zap](https://github.com/uber-go/zap) and [opentelemetry](https://github.com/open-telemetry/opentelemetry-go)
 
 ## Installation
 
@@ -19,7 +21,10 @@ packages and includes both structured and `printf`-style APIs.
 ```go
 package main
 
-import "github.com/dyammarcano/loggerTracing/tracer2logger"
+import (
+	"github.com/dyammarcano/loggerTracing/tracer2logger"
+	"go.uber.org/zap"
+)
 
 func main() {
 	cfg := &tracer2logger.Config{
@@ -33,17 +38,14 @@ func main() {
 		panic(err)
 	}
 
-	tp, err := tracer2logger.SetTracer("teste")
+	tp, err := tracer2logger.NewTracer("teste")
 	if err != nil {
 		panic(err)
 	}
 
-	defer func() {
-		if err := tp.Shutdown(); err != nil {
-			panic(err)
-		}
-	}()
+	defer tp.End()
 
 	tp.Info("test info log")
+	tp.Info("Teste de log", zap.String("testeA", "testeB"))
 }
 ```

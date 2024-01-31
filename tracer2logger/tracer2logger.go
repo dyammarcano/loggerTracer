@@ -10,25 +10,30 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 )
 
 var (
-	global = setMyLogger()
+	global = loggerGlobal()
 )
 
 type (
-	MyLogger struct {
-		logger      *zap.Logger
-		writeSyncer zapcore.WriteSyncer
-		tp          *sdktrace.TracerProvider
-		structured  bool
+	LoggerGlobal struct {
+		endCh    chan struct{}
+		logger   *zap.Logger
+		syncer   zapcore.WriteSyncer
+		provider *sdktrace.TracerProvider
+		ctx      context.Context
 	}
 
 	Config struct {
 		LogDir       string
 		ServiceName  string
+		Tracing      bool
+		Structured   bool
 		maxFileSize  int
 		maxAge       int
 		maxBackups   int
@@ -36,24 +41,46 @@ type (
 		compress     bool
 		stdout       bool
 		rotateByDate bool
-		Tracing      bool
-		Structured   bool
 	}
 
-	MTracer struct {
-		serviceName string
-		ctx         context.Context
+	LogTracer struct {
+		name string
+		ctx  context.Context
+		span trace.Span
 	}
 )
 
-// setMyLogger returns a new MyLogger instance.
-func setMyLogger() *MyLogger {
-	// Create a new zap logger
-	logger, _ := zap.NewProduction()
+func (lg *LoggerGlobal) cleanup() {
+	if err := lg.provider.Shutdown(lg.ctx); err != nil {
+		log.Fatalf("zap logger sync error: %s", err.Error())
+	}
 
-	return &MyLogger{
-		logger:      logger,
-		writeSyncer: zapcore.AddSync(os.Stdout),
+	if err := lg.logger.Sync(); err != nil {
+		log.Fatalf("zap logger sync error: %s", err.Error())
+	}
+}
+
+// shutdown shuts down TracerProvider. All registered span processors are shut down
+// in the order they were registered and any held computational resources are released.
+// After Shutdown is called, all methods are no-ops.
+func (lg *LoggerGlobal) shutdown() {
+	go func() {
+		defer lg.cleanup()
+		for {
+			select {
+			case <-lg.ctx.Done():
+				break
+			}
+		}
+	}()
+}
+
+// loggerGlobal returns a new LoggerGlobal instance.
+func loggerGlobal() *LoggerGlobal {
+	return &LoggerGlobal{
+		logger: zap.NewNop(),
+		syncer: zapcore.AddSync(io.Discard),
+		endCh:  make(chan struct{}),
 	}
 }
 
@@ -90,94 +117,106 @@ func checkDefaults(cfg *Config) {
 }
 
 // lumberjackSetup returns a new lumberjack logger.
-func lumberjackSetup(cfg *Config) *lumberjack.Logger {
-	// create the file path with the service name
-	filePath := filepath.Join(cfg.LogDir, fmt.Sprintf("%s.log", cfg.ServiceName))
+func lumberjackSetup(cfg *Config) (zapcore.WriteSyncer, error) {
+	checkDefaults(cfg) // check if any default value is missing
 
-	return &lumberjack.Logger{
-		Filename:   filePath,
+	if _, err := os.Stat(cfg.LogDir); os.IsNotExist(err) {
+		if err = os.MkdirAll(cfg.LogDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory: %s", cfg.LogDir)
+		}
+	}
+
+	// change to write syncer
+	file := zapcore.AddSync(&lumberjack.Logger{
+		Filename:   filepath.Join(cfg.LogDir, fmt.Sprintf("%s.log", cfg.ServiceName)),
 		MaxAge:     cfg.maxAge,
 		Compress:   cfg.compress,
 		LocalTime:  cfg.localTime,
 		MaxBackups: cfg.maxBackups,
 		MaxSize:    cfg.maxFileSize,
-	}
+	})
+
+	return file, nil
 }
 
 // NewMyLogger returns a new default config.
 func NewMyLogger(cfg *Config) error {
-	checkDefaults(cfg) // check if any default value is missing
+	stdout := zapcore.AddSync(os.Stdout)
 
-	if !cfg.stdout {
-		if _, err := os.Stat(cfg.LogDir); os.IsNotExist(err) {
-			if err = os.MkdirAll(cfg.LogDir, 0755); err != nil {
-				return fmt.Errorf("failed to create log directory: %s", cfg.LogDir)
-			}
-		}
-
-		global.writeSyncer = zapcore.AddSync(lumberjackSetup(cfg)) // change to write syncer
+	file, err := lumberjackSetup(cfg)
+	if err != nil {
+		return err
 	}
 
 	if cfg.Tracing {
-		if err := initTracer(); err != nil {
-			return err
+		exporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+		if err != nil {
+			return fmt.Errorf("failed to initialize stdouttrace exporter %v\n", err)
 		}
+
+		global.provider = sdktrace.NewTracerProvider(
+			sdktrace.WithSampler(sdktrace.AlwaysSample()),
+			sdktrace.WithSpanProcessor(sdktrace.NewBatchSpanProcessor(exporter)),
+		)
+
+		global.ctx = context.Background()
+		otel.SetTracerProvider(global.provider)
 	}
 
-	encoderCfg := zap.NewProductionEncoderConfig()     // default encoder config
-	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder // change the time format
-	encoder := zapcore.NewJSONEncoder(encoderCfg)      // default encoder is JSON
+	level := zap.NewAtomicLevelAt(zap.InfoLevel)
 
-	if !cfg.Structured {
-		global.structured = !cfg.Structured
-		encoder = zapcore.NewConsoleEncoder(encoderCfg) // change the encoder to console
-	}
+	productionCfg := zap.NewProductionEncoderConfig()
+	productionCfg.TimeKey = "timestamp"
+	productionCfg.EncodeTime = zapcore.ISO8601TimeEncoder
 
-	global.logger = zap.New(zapcore.NewCore(encoder, global.writeSyncer, zapcore.InfoLevel)) // change the logger
+	developmentCfg := zap.NewDevelopmentEncoderConfig()
+	developmentCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+
+	consoleEncoder := zapcore.NewConsoleEncoder(developmentCfg)
+	fileEncoder := zapcore.NewJSONEncoder(productionCfg)
+
+	global.logger = zap.New(zapcore.NewTee(
+		zapcore.NewCore(fileEncoder, file, level),
+		zapcore.NewCore(consoleEncoder, stdout, level),
+	))
+
+	global.shutdown()
 
 	return nil
 }
 
-// initTracer creates a new tracing instance.
-func initTracer() error {
-	exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
-	if err != nil {
-		return fmt.Errorf("failed to initialize stdouttrace exporter %v\n", err)
-	}
-
-	bsp := sdktrace.NewBatchSpanProcessor(exp)
-
-	global.tp = sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithSpanProcessor(bsp),
-	)
-
-	otel.SetTracerProvider(global.tp)
-	return nil
-}
-
-// SetTracer returns a new tracer provider.
-func SetTracer(serviceName string) (*MTracer, error) {
-	if global.tp == nil {
+// NewTracer returns a Tracer with the given name and options. If a Tracer for
+// the given name and options does not exist it is created, otherwise the
+// existing Tracer is returned.
+//
+// If name is empty, DefaultTracerName is used instead.
+//
+// This method is safe to be called concurrently.
+func NewTracer(serviceName string) (*LogTracer, error) {
+	if global.provider == nil {
 		return nil, fmt.Errorf("tracer provider is nil")
 	}
 
-	ctx, _ := global.tp.Tracer(serviceName).Start(context.Background(), serviceName)
+	ctxChild, spanChild := global.provider.Tracer(serviceName).Start(global.ctx, serviceName)
 
-	return &MTracer{
-		ctx:         ctx,
-		serviceName: serviceName,
+	return &LogTracer{
+		ctx:  ctxChild,
+		span: spanChild,
+		name: serviceName,
 	}, nil
 }
 
-// Shutdown the tracer provider.
-func (tp *MTracer) Shutdown() error {
-	return global.tp.Shutdown(tp.ctx)
+// End completes the Span. The Span is considered complete and ready to be
+// delivered through the rest of the telemetry pipeline after this method
+// is called. Therefore, updates to the Span are not allowed after this
+// method has been called.
+func (tp *LogTracer) End() {
+	tp.span.End()
 }
 
 // addTraceID adds traceID and spanID to the logger.
-func (tp *MTracer) addTraceID(msg string, fields []zap.Field) []zap.Field {
-	if global.tp != nil {
+func (tp *LogTracer) addTraceID(msg string, fields []zap.Field) []zap.Field {
+	if global.provider != nil {
 		traceID := ""
 		spanID := ""
 		if span := trace.SpanContextFromContext(tp.ctx); span.IsValid() {
@@ -186,268 +225,37 @@ func (tp *MTracer) addTraceID(msg string, fields []zap.Field) []zap.Field {
 		}
 
 		fields = append([]zap.Field{
-			zap.String("traceName", tp.serviceName),
+			zap.String("traceName", tp.name),
 			zap.String("traceID", traceID),
 			zap.String("spanID", spanID),
 			zap.String("M", msg),
 		}, fields...)
-
-		//fields = append(fields, zap.String("traceID", traceID), zap.String("spanID", spanID), zap.String("traceName", tp.serviceName))
 	}
 
 	return fields
 }
 
 // Info logs a message at InfoLevel. The message includes any fields passed at the log site, as well as any fields accumulated on the logger.
-func (tp *MTracer) Info(msg string, fields ...zap.Field) {
+func (tp *LogTracer) Info(msg string, fields ...zap.Field) {
 	global.logger.Info("", tp.addTraceID(msg, fields)...)
 }
 
 // Warn logs a message at WarnLevel. The message includes any fields passed at the log site, as well as any fields accumulated on the logger.
-func (tp *MTracer) Warn(msg string, fields ...zap.Field) {
+func (tp *LogTracer) Warn(msg string, fields ...zap.Field) {
 	global.logger.Warn("", tp.addTraceID(msg, fields)...)
 }
 
 // Error logs a message at ErrorLevel. The message includes any fields passed at the log site, as well as any fields accumulated on the logger.
-func (tp *MTracer) Error(msg string, fields ...zap.Field) {
+func (tp *LogTracer) Error(msg string, fields ...zap.Field) {
 	global.logger.Error("", tp.addTraceID(msg, fields)...)
 }
 
 // Debug logs a message at DebugLevel. The message includes any fields passed at the log site, as well as any fields accumulated on the logger.
-func (tp *MTracer) Debug(msg string, fields ...zap.Field) {
+func (tp *LogTracer) Debug(msg string, fields ...zap.Field) {
 	global.logger.Debug("", tp.addTraceID(msg, fields)...)
 }
 
 // Fatal logs a message at FatalLevel. The message includes any fields passed at the log site, as well as any fields accumulated on the logger.
-func (tp *MTracer) Fatal(msg string, fields ...zap.Field) {
+func (tp *LogTracer) Fatal(msg string, fields ...zap.Field) {
 	global.logger.Fatal("", tp.addTraceID(msg, fields)...)
 }
-
-//import (
-//	"context"
-//	"fmt"
-//	"go.uber.org/zap"
-//	"go.uber.org/zap/zapcore"
-//	"gopkg.in/natefinch/lumberjack.v2"
-//	"os"
-//	"path/filepath"
-//
-//	"go.opentelemetry.io/otel"
-//	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-//	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-//	"go.opentelemetry.io/otel/trace"
-//)
-//
-//var loggerTracer *LoggerTracer
-//
-//type (
-//	ctxKey struct{}
-//
-//	LoggerTracer struct {
-//		trace.Tracer
-//		*zap.Logger
-//		*Config
-//	}
-//
-//	Config struct {
-//		logDir       string
-//		serviceName  string
-//		maxFileSize  int
-//		maxAge       int
-//		maxBackups   int
-//		localTime    bool
-//		compress     bool
-//		stdout       bool
-//		rotateByDate bool
-//		tracing      bool
-//		structured   bool
-//	}
-//
-//	Tracing struct {
-//		Span
-//		trace.Tracer
-//		context.Context
-//	}
-//
-//	Span struct {
-//		trace.Span
-//		context.Context
-//	}
-//)
-//
-//// checkDefaults checks if any default value is missing.
-//func checkDefaults(cfg *Config) {
-//	if cfg.maxFileSize == 0 {
-//		cfg.maxFileSize = 100
-//	}
-//
-//	if cfg.maxAge == 0 {
-//		cfg.maxAge = 28
-//	}
-//
-//	if cfg.maxBackups == 0 {
-//		cfg.maxBackups = 7
-//	}
-//
-//	if cfg.localTime == false {
-//		cfg.localTime = true
-//	}
-//
-//	if cfg.compress == false {
-//		cfg.compress = true
-//	}
-//
-//	if cfg.rotateByDate == false {
-//		cfg.rotateByDate = true
-//	}
-//
-//	if cfg.logDir == "" {
-//		wd, _ := os.Getwd()
-//		cfg.logDir = filepath.Join(wd, "logs")
-//	}
-//}
-//
-//// lumberjackSetup returns a new lumberjack logger.
-//func lumberjackSetup(cfg *Config) *lumberjack.Logger {
-//	filePath := filepath.Join(cfg.logDir, fmt.Sprintf("%s.log", cfg.serviceName))
-//
-//	return &lumberjack.Logger{
-//		MaxAge:     cfg.maxAge,
-//		Compress:   cfg.compress,
-//		Filename:   filePath,
-//		LocalTime:  cfg.localTime,
-//		MaxBackups: cfg.maxBackups,
-//		MaxSize:    cfg.maxFileSize,
-//	}
-//}
-//
-//// NewLoggerTracer returns a new default config.
-//func NewLoggerTracer(cfg *Config) error {
-//	checkDefaults(cfg) // check if any default value is missing
-//
-//	writeSyncer := zapcore.AddSync(os.Stdout)
-//
-//	if !cfg.stdout {
-//		writeSyncer = zapcore.AddSync(lumberjackSetup(cfg))
-//
-//		if _, err := os.Stat(cfg.logDir); os.IsNotExist(err) {
-//			if err = os.MkdirAll(cfg.logDir, 0755); err != nil {
-//				return fmt.Errorf("failed to create log directory: %s", cfg.logDir)
-//			}
-//		}
-//	}
-//
-//	encoderCfg := zap.NewProductionEncoderConfig()
-//	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
-//	encoder := zapcore.NewJSONEncoder(encoderCfg)
-//
-//	if !cfg.structured {
-//		encoder = zapcore.NewConsoleEncoder(encoderCfg)
-//	}
-//
-//	logger := zap.New(zapcore.NewCore(encoder, writeSyncer, zapcore.InfoLevel))
-//
-//	loggerTracer = &LoggerTracer{Config: cfg, Logger: logger}
-//
-//	return nil
-//}
-//
-//// NewTracer creates a new tracing instance.
-//func (lt *LoggerTracer) NewTracer(serviceName string) (*Tracing, error) {
-//	exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
-//	if err != nil {
-//		return nil, fmt.Errorf("failed to initialize stdouttrace exporter %v\n", err)
-//	}
-//
-//	bsp := sdktrace.NewBatchSpanProcessor(exp)
-//
-//	tp := sdktrace.NewTracerProvider(
-//		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-//		sdktrace.WithSpanProcessor(bsp),
-//	)
-//
-//	otel.SetTracerProvider(tp)
-//
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	tc := tp.Tracer(serviceName)
-//	ctx := context.WithValue(context.Background(), ctxKey{}, tc)
-//
-//	return &Tracing{Tracer: tc, Context: ctx}, nil
-//}
-//
-//// Start a new span with the given name and return a new context with the span in it.
-//func (t *Tracing) Start(name string) {
-//	ss, _ := t.Context.Value(ctxKey{}).(trace.Tracer)
-//	ctx, span := ss.Start(t.Context, name)
-//
-//	t.Span = Span{Span: span, Context: ctx}
-//}
-//
-//// End the span.
-//func (t *Tracing) End() {
-//	t.Span.End()
-//}
-//
-//// Fatal logs a message at fatal level.
-//func Fatal(format string, fields ...any) {
-//	loggerTracer.Fatal(fmt.Sprintf(format, fields...))
-//}
-//
-//// Debug logs a message at debug level.
-//func Debug(format string, fields ...any) {
-//	loggerTracer.Debug(fmt.Sprintf(format, fields...))
-//}
-//
-//// Warn logs a message at warn level.
-//func Warn(format string, fields ...any) {
-//	loggerTracer.Warn(fmt.Sprintf(format, fields...))
-//}
-//
-//// Error logs a message at error level.
-//func Error(format string, fields ...any) {
-//	loggerTracer.Error(fmt.Sprintf(format, fields...))
-//}
-//
-//// Info logs a message at info level.
-//func Info(format string, fields ...any) {
-//	loggerTracer.Info(fmt.Sprintf(format, fields...))
-//}
-//
-////func (t *Tracing) FromContext(ctx context.Context) *zap.Logger {
-////	childLogger, _ := ctx.Value(ctxKey{}).(*zap.Logger)
-////
-////	if traceID := trace.SpanFromContext(ctx).SpanContext().TraceID(); traceID.IsValid() {
-////		childLogger = childLogger.With(zap.String("trace-id", traceID.String()))
-////	}
-////
-////	if spanID := trace.SpanFromContext(ctx).SpanContext().SpanID(); spanID.IsValid() {
-////		childLogger = childLogger.With(zap.String("span-id", spanID.String()))
-////	}
-////
-////	return childLogger
-////}
-////
-////func (lt *LoggerTracer) FromContext(ctx context.Context) *zap.Logger {
-////	childLogger, _ := ctx.Value(ctxKey{}).(*zap.Logger)
-////
-////	if traceID := trace.SpanFromContext(ctx).SpanContext().TraceID(); traceID.IsValid() {
-////		childLogger = childLogger.With(zap.String("trace-id", traceID.String()))
-////	}
-////
-////	if spanID := trace.SpanFromContext(ctx).SpanContext().SpanID(); spanID.IsValid() {
-////		childLogger = childLogger.With(zap.String("span-id", spanID.String()))
-////	}
-////
-////	return childLogger
-////}
-////
-////func (lt *LoggerTracer) NewContext(parent context.Context, z *zap.Logger) context.Context {
-////	return context.WithValue(parent, ctxKey{}, z)
-////}
-////
-////func (lt *LoggerTracer) WithTraceID(traceID string) *zap.Logger {
-////	return lt.Logger.With(zap.String("trace-id", traceID))
-////}
