@@ -10,8 +10,6 @@ func TestNewMyLogger(t *testing.T) {
 	cfg := &Config{
 		LogDir:      "C:/arqprod_local/testing",
 		ServiceName: "testService",
-		Tracing:     true,
-		//structured:  true,
 	}
 
 	err := NewMyLogger(cfg)

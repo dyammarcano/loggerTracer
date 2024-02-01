@@ -30,8 +30,6 @@ func main() {
 	cfg := &tracer2logger.Config{
 		LogDir:      "/var/log/app",
 		ServiceName: "testService",
-		Tracing:     true,
-		Structured:  true,
 	}
 
 	if err := tracer2logger.NewMyLogger(cfg); err != nil {
