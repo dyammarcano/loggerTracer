@@ -1,4 +1,4 @@
-package logger
+package loggerTracing
 
 import (
 	"github.com/stretchr/testify/assert"
@@ -14,7 +14,7 @@ func TestNewLogger(t *testing.T) {
 	err := NewLogger(cfg)
 	assert.NoError(t, err)
 
-	ll.Info("Test Info")
+	Info("Test Info witoout fields")
 
 	tracer1 := NewTracer("testService 1")
 	defer tracer1.End()
