@@ -1,6 +1,6 @@
-[![Unit Test + Lint + Security](https://github.com/dyammarcano/loggerTracing/actions/workflows/ci.yml/badge.svg)](https://github.com/dyammarcano/loggerTracing/actions/workflows/ci.yml)
+[![Unit Test + Lint + Security](https://github.com/dyammarcano/loggerTracer/actions/workflows/ci.yml/badge.svg)](https://github.com/dyammarcano/loggerTracer/actions/workflows/ci.yml)
 
-# tracer2logger is a logger tracing
+# loggerTracer is a logger tracing
 
 ### `For Internal use in PoC`
 
@@ -8,7 +8,7 @@
 
 ## Installation
 
-`go get -u github.com/dyammarcano/loggerTracing`
+`go get -u github.com/dyammarcano/loggerTracer`
 
 Note that zap only supports the two most recent minor versions of Go.
 
@@ -22,28 +22,23 @@ packages and includes both structured and `printf`-style APIs.
 package main
 
 import (
-	"github.com/dyammarcano/loggerTracing/tracer2logger"
-	"go.uber.org/zap"
+	"github.com/dyammarcano/loggerTracer"
 )
 
 func main() {
-	cfg := &tracer2logger.Config{
+	cfg := &loggerTracer.Config{
 		LogDir:      "/var/log/app",
 		ServiceName: "testService",
 	}
 
-	if err := tracer2logger.NewMyLogger(cfg); err != nil {
+	if err := loggerTracer.NewMyLogger(cfg); err != nil {
 		panic(err)
 	}
 
-	tp, err := tracer2logger.NewTracer("teste")
-	if err != nil {
-		panic(err)
-	}
+	tracer1 := loggerTracer.NewTracer("testService 1")
+	defer tracer1.End()
 
-	defer tp.End()
-
-	tp.Info("test info log")
-	tp.Info("Teste de log", zap.String("testeA", "testeB"))
+	tracer1.Info("Test Info 1", loggerTracer.Fields{"key": "value 1"})
+	tracer1.Info("Test Info 2", loggerTracer.Fields{"key": "value 2"})
 }
 ```
