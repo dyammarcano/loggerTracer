@@ -1,4 +1,4 @@
-package tracer2logger
+package loggerTracing
 
 import (
 	"context"
@@ -20,7 +20,6 @@ type (
 	LoggerTracer struct {
 		trace.Tracer
 		*zap.Logger
-		*Config
 	}
 
 	Config struct {
@@ -42,7 +41,7 @@ type (
 )
 
 func NewLoggerTracer(ctx context.Context, cfg *Config) (*LoggerTracer, error) {
-	lt := &LoggerTracer{Config: cfg}
+	lt := &LoggerTracer{}
 
 	if cfg.tracing {
 		tp, err := NewTraceProvider()

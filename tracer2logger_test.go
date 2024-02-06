@@ -1,4 +1,4 @@
-package tracer2logger
+package loggerTracing
 
 import (
 	"context"
