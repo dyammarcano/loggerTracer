@@ -1,4 +1,4 @@
-package loggerTracing
+package loggerTracer
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ const (
 	FatalLevel
 )
 
-var globalProvider *sdktrace.TracerProvider
+var tracerProvider *sdktrace.TracerProvider
 
 type (
 	Level  int
@@ -126,12 +126,12 @@ func NewLogger(cfg *Config) error {
 		return fmt.Errorf("failed to initialize stdouttrace exporter %v\n", err)
 	}
 
-	globalProvider = sdktrace.NewTracerProvider(
+	tracerProvider = sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 		sdktrace.WithSpanProcessor(sdktrace.NewBatchSpanProcessor(exporter)),
 	)
 
-	otel.SetTracerProvider(globalProvider)
+	otel.SetTracerProvider(tracerProvider)
 
 	level := zap.NewAtomicLevelAt(selectLevel(cfg.Level))
 

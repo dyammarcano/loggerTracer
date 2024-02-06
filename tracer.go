@@ -1,4 +1,4 @@
-package loggerTracing
+package loggerTracer
 
 import (
 	"context"
@@ -16,7 +16,7 @@ type (
 
 // NewTracer returns a new Trace4U.
 func NewTracer(serviceName string) *Trace4U {
-	ctxChild, childSpan := globalProvider.Tracer(serviceName).Start(context.Background(), serviceName)
+	ctxChild, childSpan := tracerProvider.Tracer(serviceName).Start(context.Background(), serviceName)
 
 	return &Trace4U{
 		childCtx: ctxChild,
@@ -42,7 +42,7 @@ func (t *Trace4U) getFields(ctx context.Context, fields Fields) []Field {
 		zapFields = append(zapFields, zap.Any(key, value))
 	}
 
-	_, newSpan := globalProvider.Tracer("logEntry").Start(ctx, "logEntry")
+	_, newSpan := tracerProvider.Tracer("logEntry").Start(ctx, "logEntry")
 
 	zapFields = append(zapFields, zap.String("traceId", trace.SpanContextFromContext(ctx).TraceID().String()))
 	zapFields = append(zapFields, zap.String("spanId", newSpan.SpanContext().SpanID().String()))
