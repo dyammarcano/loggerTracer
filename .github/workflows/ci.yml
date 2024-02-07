@@ -21,8 +21,10 @@ jobs:
 
       - name: Check gofmt passes
         run: |
-          if [ -n "$(gofmt -d -s .)" ]; then
+          RESULT="$(gofmt -d -s .)"
+          if [ -n "$RESULT" ]; then
             echo "Code is not properly formatted. Please run 'gofmt -w .'"
+            echo $RESULT
             exit 1
           fi
 
