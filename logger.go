@@ -25,9 +25,14 @@ const (
 var tracerProvider *sdktrace.TracerProvider
 
 type (
-	Level  int
-	Field  = zapcore.Field
-	Fields map[string]any
+	Level int
+
+	Entry struct {
+		Key       string
+		Integer   int64
+		String    string
+		Interface any
+	}
 
 	Config struct {
 		Stdout       bool
@@ -158,31 +163,37 @@ func NewLogger(cfg *Config) error {
 }
 
 // Info logs an info message.
-func Info(msg string, fields ...Field) {
-	zap.L().Info(msg, fields...)
+func Info(msg string, fields ...Entry) {
+	zapFields := getFields(nil, fields...)
+	zap.L().Info(msg, zapFields...)
 }
 
 // Error logs an error message.
-func Error(msg string, fields ...Field) {
-	zap.L().Error(msg, fields...)
+func Error(msg string, fields ...Entry) {
+	zapFields := getFields(nil, fields...)
+	zap.L().Error(msg, zapFields...)
 }
 
 // Warn logs a warning message.
-func Warn(msg string, fields ...Field) {
-	zap.L().Warn(msg, fields...)
+func Warn(msg string, fields ...Entry) {
+	zapFields := getFields(nil, fields...)
+	zap.L().Warn(msg, zapFields...)
 }
 
 // Debug logs a debug message.
-func Debug(msg string, fields ...Field) {
-	zap.L().Debug(msg, fields...)
+func Debug(msg string, fields ...Entry) {
+	zapFields := getFields(nil, fields...)
+	zap.L().Debug(msg, zapFields...)
 }
 
 // Fatal logs a fatal message.
-func Fatal(msg string, fields ...Field) {
-	zap.L().Fatal(msg, fields...)
+func Fatal(msg string, fields ...Entry) {
+	zapFields := getFields(nil, fields...)
+	zap.L().Fatal(msg, zapFields...)
 }
 
 // Panic logs a panic message.
-func Panic(msg string, fields ...Field) {
-	zap.L().Panic(msg, fields...)
+func Panic(msg string, fields ...Entry) {
+	zapFields := getFields(nil, fields...)
+	zap.L().Panic(msg, zapFields...)
 }
