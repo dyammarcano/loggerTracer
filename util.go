@@ -15,7 +15,7 @@ func getFields(ctx context.Context, fields ...Entry) []zap.Field {
 		return zapFields
 	}
 
-	for i, _ := range fields {
+	for i := range fields {
 		if fields[i].String != "" {
 			zapFields = append(zapFields, zap.Any(fields[i].Key, fields[i].String))
 		}
