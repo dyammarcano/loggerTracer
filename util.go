@@ -29,19 +29,18 @@ func getFields(ctx context.Context, fields ...Entry) []zap.Field {
 		}
 	}
 
-	// check if context has span
-	if span := trace.SpanFromContext(ctx); span != nil && ctx != nil {
-		spanCtx := span.SpanContext()
-		zapFields = append(zapFields, zap.String("traceId", spanCtx.TraceID().String()))
-		zapFields = append(zapFields, zap.String("spanId", spanCtx.SpanID().String()))
-
-		// get val.name from context
+	// get val.name from context
+	if ctx != nil {
 		name, ok := ctx.Value("serviceName").(string)
 		if ok {
-			zapFields = append(zapFields, zap.String("name", name))
-		}
+			_, newSpan := tracerProvider.Tracer("logEntry").Start(ctx, "logEntry")
 
-		return zapFields
+			zapFields = append(zapFields, zap.String("traceId", trace.SpanContextFromContext(ctx).TraceID().String()))
+			zapFields = append(zapFields, zap.String("spanId", newSpan.SpanContext().SpanID().String()))
+			zapFields = append(zapFields, zap.String("name", name))
+
+			return zapFields
+		}
 	}
 
 	return zapFields

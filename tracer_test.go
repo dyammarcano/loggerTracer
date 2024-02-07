@@ -18,7 +18,7 @@ func TestNewTracer(t *testing.T) {
 	tracer1 := NewTracer("testService 1")
 	defer tracer1.End()
 
-	tracer1.Info("Test Info 1", Entry{Key: "key 1", String: "value 1"}, Entry{Key: "key 2", String: "value 2"})
+	tracer1.Info("Test Info 1", AddField("key 1", "value 1"), Entry{Key: "key 2", String: "value 2"})
 	tracer1.Info("Test Info 2", Entry{Key: "key 2", String: "value 2"})
 
 	tracer2 := NewTracer("testService 2")
