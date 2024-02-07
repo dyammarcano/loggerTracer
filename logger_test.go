@@ -15,5 +15,6 @@ func TestNewLogger(t *testing.T) {
 	assert.NoError(t, err)
 
 	Info("Test Info witout fields")
+	Info("Test Info witout fields", AddField("hello", "world"))
 	Error("Test Error witout fields")
 }

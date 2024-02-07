@@ -30,7 +30,7 @@ func getFields(ctx context.Context, fields ...Entry) []zap.Field {
 	}
 
 	// check if context has span
-	if span := trace.SpanFromContext(ctx); span != nil {
+	if span := trace.SpanFromContext(ctx); span != nil && ctx != nil {
 		spanCtx := span.SpanContext()
 		zapFields = append(zapFields, zap.String("traceId", spanCtx.TraceID().String()))
 		zapFields = append(zapFields, zap.String("spanId", spanCtx.SpanID().String()))
@@ -58,5 +58,9 @@ func AddFieldFormat(key string, format string, a ...any) Entry {
 
 // AddFieldError returns a new Entry with the error.
 func AddFieldError(err error) Entry {
-	return Entry{Key: "err", String: err.Error()}
+	if err != nil {
+		return Entry{Key: "err", String: err.Error()}
+	}
+
+	return Entry{}
 }

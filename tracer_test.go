@@ -1,6 +1,7 @@
 package loggerTracer
 
 import (
+	"errors"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -29,4 +30,5 @@ func TestNewTracer(t *testing.T) {
 	tracer2.Info("Test Info 4", AddField("key 2", "value 2"), AddField("key 3", "value 3"))
 	tracer2.Info("Test Info format", AddFieldFormat("key 1", "%d + %d = %d", 1, 2, 3))
 	tracer2.Error("Test Error 1", AddFieldError(err))
+	tracer2.Error("Test Error 2", AddFieldError(errors.New("test error")))
 }
