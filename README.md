@@ -4,7 +4,7 @@
 
 ### `For Internal use in PoC`
 
-### tracer2logger wrap arround [zap](https://github.com/uber-go/zap) and [opentelemetry](https://github.com/open-telemetry/opentelemetry-go)
+### loggerTracer wrap arround [zap](https://github.com/uber-go/zap) and [opentelemetry](https://github.com/open-telemetry/opentelemetry-go)
 
 ## Installation
 
