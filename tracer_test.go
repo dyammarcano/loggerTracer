@@ -8,7 +8,7 @@ import (
 
 func TestNewTracer(t *testing.T) {
 	cfg := &Config{
-		LogDir:      "C:/arqprod_local/testing",
+		LogDir:      "C:/dev/testing",
 		ServiceName: "testService",
 	}
 
