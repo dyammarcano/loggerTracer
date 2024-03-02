@@ -22,7 +22,9 @@ packages and includes both structured and `printf`-style APIs.
 package main
 
 import (
+	"fmt"
 	"github.com/dyammarcano/loggerTracer"
+	"time"
 )
 
 func main() {
@@ -31,14 +33,38 @@ func main() {
 		ServiceName: "testService",
 	}
 
-	if err := loggerTracer.NewMyLogger(cfg); err != nil {
+	if err := loggerTracer.NewLogger(cfg); err != nil {
 		panic(err)
 	}
 
-	tracer1 := loggerTracer.NewTracer("testService 1")
-	defer tracer1.End()
+	for i := 0; i < 10; i++ {
+		mainFunc(i)
+	}
+}
 
-	tracer1.Info("Test Info 1", loggerTracer.Fields{"key": "value 1"})
-	tracer1.Info("Test Info 2", loggerTracer.Fields{"key": "value 2"})
+func mainFunc(num int) {
+	tracer := loggerTracer.NewTracer(fmt.Sprintf("lap %d", num))
+	defer tracer.End()
+
+	tracer.Info(fmt.Sprintf("Function Info %d", num), loggerTracer.AddField("key 1", "value 1"))
+	innerFunc(tracer, num)
+	innerFunc2(tracer, num)
+	innerFunc3(tracer, num)
+
+	tracer.Error(fmt.Sprintf("Function Error %d", num), loggerTracer.AddFieldError(fmt.Errorf("error %d", num)))
+
+	<-time.After(1 * time.Second)
+}
+
+func innerFunc(tracer *loggerTracer.Trace4U, num int) {
+	tracer.Info(fmt.Sprintf("Inner Function %d", num), loggerTracer.Entry{Key: "funcKey 1", String: "funcValue 1"})
+}
+
+func innerFunc2(tracer *loggerTracer.Trace4U, num int) {
+	tracer.Info(fmt.Sprintf("Inner Function %d", num), loggerTracer.Entry{Key: "funcKey 2", String: "funcValue 2"})
+}
+
+func innerFunc3(tracer *loggerTracer.Trace4U, num int) {
+	tracer.Warn(fmt.Sprintf("Inner Function %d", num), loggerTracer.Entry{Key: "funcKey 3", String: "funcValue 3"})
 }
 ```
