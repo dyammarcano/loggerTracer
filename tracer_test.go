@@ -31,4 +31,5 @@ func TestNewTracer(t *testing.T) {
 	tracer2.Info("Test Info format", AddFieldFormat("key 1", "%d + %d = %d", 1, 2, 3))
 	tracer2.Error("Test Error 1", AddFieldError(err))
 	tracer2.Error("Test Error 2", AddFieldError(errors.New("test error")))
+	tracer2.Info("Test Info no fields")
 }
